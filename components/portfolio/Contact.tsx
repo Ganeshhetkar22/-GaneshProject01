@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback, memo } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle, FileText, Github, Linkedin, Loader2, Mail, Send } from 'lucide-react';
 import SectionReveal from './SectionReveal';
@@ -18,13 +18,81 @@ const CONTACT_LINKS = [
 
 type Status = 'idle' | 'sending' | 'sent' | 'error';
 
+// Memoized Field component to prevent unnecessary re-renders
+const Field = memo(({
+  name,
+  label,
+  type = 'text',
+  textarea = false,
+  value,
+  onChange,
+  onFocus,
+  onBlur,
+  isFocused,
+}: {
+  name: string;
+  label: string;
+  type?: string;
+  textarea?: boolean;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  onFocus: () => void;
+  onBlur: () => void;
+  isFocused: boolean;
+}) => {
+  const hasValue = value.length > 0;
+  const Tag = textarea ? 'textarea' : 'input';
+
+  return (
+    <div className="relative">
+      <label
+        className={`absolute left-4 transition-all duration-300 pointer-events-none z-10 ${
+          isFocused || hasValue
+            ? 'top-2 text-xs font-semibold text-violet-400'
+            : 'top-1/2 -translate-y-1/2 text-sm text-slate-400'
+        } ${textarea && !isFocused && !hasValue ? '!top-4 !-translate-y-0' : ''}`}
+      >
+        {label}
+      </label>
+      <Tag
+        name={name}
+        type={type}
+        value={value}
+        onChange={onChange}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        required={name !== 'subject'}
+        className={`w-full bg-slate-900/60 border border-slate-700/60 rounded-2xl px-4 text-white text-sm input-glow transition-all duration-300 resize-none focus:border-violet-500/50 focus:bg-slate-900/80 ${
+          textarea ? 'pt-7 pb-4 min-h-[140px]' : 'pt-7 pb-3'
+        } ${isFocused ? 'border-violet-500/50 bg-slate-900/80' : 'hover:border-slate-600/80'}`}
+        spellCheck="true"
+        autoComplete={name === 'email' ? 'email' : name === 'name' ? 'name' : 'off'}
+        {...(textarea ? { rows: 5 } : {})}
+      />
+    </div>
+  );
+});
+
+Field.displayName = 'Field';
+
 export default function Contact() {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
   const [focused, setFocused] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>('idle');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleChange = useCallback((field: keyof typeof form, value: string) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+  }, []);
+
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate form
+    if (!form.name.trim() || !form.email.trim() || !form.message.trim()) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
     setStatus('sending');
 
     const subject = encodeURIComponent(form.subject || 'Portfolio enquiry');
@@ -34,51 +102,7 @@ export default function Contact() {
 
     window.location.href = `mailto:${EMAIL}?subject=${subject}&body=${body}`;
     setTimeout(() => setStatus('sent'), 700);
-  };
-
-  const Field = ({
-    name,
-    label,
-    type = 'text',
-    textarea = false,
-  }: {
-    name: keyof typeof form;
-    label: string;
-    type?: string;
-    textarea?: boolean;
-  }) => {
-    const isFocused = focused === name;
-    const hasValue = form[name].length > 0;
-    const Tag = textarea ? 'textarea' : 'input';
-
-    return (
-      <div className="relative">
-        <label
-          className={`absolute left-4 transition-all duration-300 pointer-events-none z-10 ${
-            isFocused || hasValue
-              ? 'top-2 text-xs font-semibold text-violet-400'
-              : 'top-1/2 -translate-y-1/2 text-sm text-slate-400'
-          } ${textarea && !isFocused && !hasValue ? '!top-4 !-translate-y-0' : ''}`}
-        >
-          {label}
-        </label>
-        <Tag
-          name={name}
-          type={type}
-          value={form[name]}
-          onChange={e => setForm(f => ({ ...f, [name]: e.target.value }))}
-          onFocus={() => setFocused(name)}
-          onBlur={() => setFocused(null)}
-          required={name !== 'subject'}
-          className={`w-full bg-slate-900/60 border border-slate-700/60 rounded-2xl px-4 text-white text-sm input-glow transition-all duration-300 resize-none ${
-            textarea ? 'pt-7 pb-4 min-h-[140px]' : 'pt-7 pb-3'
-          } ${isFocused ? 'border-violet-500/50' : 'hover:border-slate-600/80'}`}
-          style={{ outline: 'none' }}
-          {...(textarea ? { rows: 5 } : {})}
-        />
-      </div>
-    );
-  };
+  }, [form]);
 
   return (
     <section id="contact" className="relative py-32 overflow-hidden">
@@ -172,7 +196,11 @@ export default function Contact() {
                   <h3 className="text-2xl font-black text-white">Email Draft Opened</h3>
                   <p className="text-slate-400">Your mail app should now have the message ready to send.</p>
                   <button
-                    onClick={() => { setStatus('idle'); setForm({ name: '', email: '', subject: '', message: '' }); }}
+                    onClick={() => { 
+                      setStatus('idle'); 
+                      setForm({ name: '', email: '', subject: '', message: '' });
+                      setFocused(null);
+                    }}
                     className="mt-2 px-6 py-2.5 rounded-xl shimmer-btn text-white font-semibold hover:scale-105 transition-transform"
                   >
                     Write Another
@@ -181,16 +209,50 @@ export default function Contact() {
               ) : (
                 <form onSubmit={handleSubmit} className="flex flex-col gap-5">
                   <div className="grid sm:grid-cols-2 gap-5">
-                    <Field name="name" label="Your Name" />
-                    <Field name="email" label="Email Address" type="email" />
+                    <Field 
+                      name="name" 
+                      label="Your Name"
+                      value={form.name}
+                      onChange={(e) => handleChange('name', e.target.value)}
+                      onFocus={() => setFocused('name')}
+                      onBlur={() => setFocused(null)}
+                      isFocused={focused === 'name'}
+                    />
+                    <Field 
+                      name="email" 
+                      label="Email Address" 
+                      type="email"
+                      value={form.email}
+                      onChange={(e) => handleChange('email', e.target.value)}
+                      onFocus={() => setFocused('email')}
+                      onBlur={() => setFocused(null)}
+                      isFocused={focused === 'email'}
+                    />
                   </div>
-                  <Field name="subject" label="Subject" />
-                  <Field name="message" label="Your Message" textarea />
+                  <Field 
+                    name="subject" 
+                    label="Subject"
+                    value={form.subject}
+                    onChange={(e) => handleChange('subject', e.target.value)}
+                    onFocus={() => setFocused('subject')}
+                    onBlur={() => setFocused(null)}
+                    isFocused={focused === 'subject'}
+                  />
+                  <Field 
+                    name="message" 
+                    label="Your Message" 
+                    textarea
+                    value={form.message}
+                    onChange={(e) => handleChange('message', e.target.value)}
+                    onFocus={() => setFocused('message')}
+                    onBlur={() => setFocused(null)}
+                    isFocused={focused === 'message'}
+                  />
 
                   <button
                     type="submit"
-                    disabled={status === 'sending'}
-                    className="flex items-center justify-center gap-3 py-4 rounded-2xl text-white font-bold shimmer-btn hover:scale-105 hover:shadow-glow-purple transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed"
+                    disabled={status === 'sending' || !form.name.trim() || !form.email.trim() || !form.message.trim()}
+                    className="flex items-center justify-center gap-3 py-4 rounded-2xl text-white font-bold shimmer-btn hover:scale-105 hover:shadow-glow-purple transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {status === 'sending' ? (
                       <>
